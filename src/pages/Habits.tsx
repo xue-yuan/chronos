@@ -141,20 +141,20 @@ const Habits: Component = () => {
                                         </div>
 
                                         <div class="flex items-center justify-between gap-6 mb-6">
-                                            <div class="flex-1">
+                                            <div class="flex-1 min-w-0">
                                                 <HabitHeatmap year={new Date().getFullYear()} habitId={habit.id} mode={habit.mode} dailyTarget={habit.dailyTarget || undefined} />
                                             </div>
 
                                             <div class="shrink-0 flex flex-col items-center gap-2 min-w-[80px]">
                                                 <button
                                                     onClick={() => handleToggle(habit.id, habit.mode, habit.dailyTarget || 0)}
-                                                    class={`btn btn-circle btn-lg transition-all duration-300 border-0 shadow-lg ${todayLog().completed
+                                                    class={`btn btn-lg transition-all duration-300 border-0 shadow-lg ${todayLog().completed
                                                         ? 'bg-gradient-to-br from-success to-success/50 text-white shadow-success/20 hover:scale-105'
                                                         : 'bg-white/5 hover:bg-white/10 text-white/20 hover:text-white'
-                                                        }`}
+                                                        } ${(todayLog().value && todayLog().value!.toString().length > 3) ? 'w-auto px-4 rounded-full min-w-[4rem]' : 'btn-circle'}`}
                                                 >
                                                     <Show when={habit.mode === 'checkbox'} fallback={
-                                                        <span class="text-xl font-black">{todayLog().value || 0}</span>
+                                                        <span class={`${(todayLog().value && todayLog().value!.toString().length > 4) ? 'text-sm' : 'text-xl'} font-black`}>{todayLog().value || 0}</span>
                                                     }>
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />

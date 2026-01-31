@@ -1,15 +1,32 @@
-import { type Component, createEffect, Show, For, Index, createSignal } from 'solid-js';
+import { type Component, createEffect, Show, For, Index, createSignal, onMount } from 'solid-js';
 import { plansStore } from '../store/plans';
 import { habitsStore } from '../store/habits';
 import HabitItem from '../components/habits/HabitItem';
 import ParticleBurst from '../components/viz/ParticleBurst';
+import DatePicker from '../components/DatePicker';
 import { Motion } from 'solid-motionone';
 
 const DailyDashboard: Component = () => {
-    const { todayPlan, ensureTodayPlan, updateDailyPlan, toggleHabit } = plansStore;
+    const {
+        todayPlan, ensureTodayPlan, updateDailyPlan, toggleHabit,
+        viewDate, setViewDate, prevDay, nextDay
+    } = plansStore;
     const { habits } = habitsStore;
     const [showCelebration, setShowCelebration] = createSignal(false);
 
+    onMount(() => {
+        setViewDate(new Date());
+    });
+
+
+    const isReadOnly = () => {
+        const vDate = viewDate();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const checkDate = new Date(vDate);
+        checkDate.setHours(0, 0, 0, 0);
+        return checkDate < today;
+    };
 
     createEffect(() => {
         const currentHabits = habits();
@@ -19,12 +36,14 @@ const DailyDashboard: Component = () => {
     });
 
     const handleBigThingChange = (text: string) => {
+        if (isReadOnly()) return;
         if (todayPlan()) {
             updateDailyPlan(todayPlan()!.id, { bigThing: { ...todayPlan()!.bigThing, text } });
         }
     };
 
     const toggleBigThing = () => {
+        if (isReadOnly()) return;
         if (todayPlan()) {
             const newState = !todayPlan()!.bigThing.completed;
             updateDailyPlan(todayPlan()!.id, { bigThing: { ...todayPlan()!.bigThing, completed: newState } });
@@ -36,6 +55,19 @@ const DailyDashboard: Component = () => {
     };
 
 
+    const allTasksCompleted = () => {
+        const plan = todayPlan();
+        if (!plan) return false;
+
+        const bigThingDone = plan.bigThing.completed;
+        const habitLogs = Object.values(plan.habitLogs || {});
+        const allHabitsDone = habitLogs.length > 0
+            ? habitLogs.every(h => h.completed || h.value > 0)
+            : true;
+
+        return bigThingDone && allHabitsDone;
+    };
+
     return (
         <div class="relative min-h-full w-full pb-20">
             <ParticleBurst active={showCelebration()} />
@@ -44,16 +76,36 @@ const DailyDashboard: Component = () => {
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6 }}
-                class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-4"
+                class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-4 relative z-50"
             >
                 <div>
                     <h2 class="text-6xl md:text-7xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-white via-white/90 to-white/50 mb-3 drop-shadow-sm">
-                        Today's Focus
+                        {new Date().toDateString() === viewDate().toDateString() ? "Today's Focus" : "Daily Focus"}
                     </h2>
-                    <p class="text-white/60 text-xl font-light tracking-wide">
-                        {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                    </p>
+                    <div class="-ml-4">
+                        <DatePicker
+                            date={viewDate()}
+                            onDateChange={setViewDate}
+                            onPrevDay={prevDay}
+                            onNextDay={nextDay}
+                        />
+                    </div>
                 </div>
+
+                <Show when={allTasksCompleted()}>
+                    <Motion.div
+                        initial={{ opacity: 0, scale: 0.8, x: 20 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        class="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 text-green-400 shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)] backdrop-blur-md"
+                    >
+                        <div class="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/50">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-black font-bold" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <span class="font-bold tracking-wide uppercase text-sm">All Tasks Completed</span>
+                    </Motion.div>
+                </Show>
             </Motion.div>
 
             <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 mb-12">
@@ -90,17 +142,17 @@ const DailyDashboard: Component = () => {
                                                 placeholder="What is the ONE thing you must do?"
                                                 class={`input input-ghost text-3xl md:text-5xl lg:text-5xl font-bold w-full h-auto py-2 px-0 pr-16 md:pr-24 focus:outline-none focus:bg-transparent focus:border-none placeholder:text-white/10 tracking-tight transition-all duration-500 ${todayPlan()?.bigThing.completed ? 'line-through opacity-30 text-white decoration-4 decoration-primary' : 'text-white'}`}
                                                 value={todayPlan()?.bigThing.text || ""}
-                                                disabled={todayPlan()?.bigThing.completed}
+                                                disabled={todayPlan()?.bigThing.completed || isReadOnly()}
                                                 onChange={(e) => handleBigThingChange(e.currentTarget.value)}
                                             />
 
                                             <div class="absolute top-1/2 -translate-y-1/2 right-0 md:-right-4">
-                                                <label class="swap swap-rotate group/check">
+                                                <label class={`swap swap-rotate group/check ${isReadOnly() ? 'cursor-not-allowed opacity-50' : ''}`}>
                                                     <input
                                                         type="checkbox"
                                                         checked={todayPlan()?.bigThing.completed || false}
                                                         onChange={toggleBigThing}
-                                                        disabled={!todayPlan()?.bigThing.text.trim() || todayPlan()?.bigThing.completed}
+                                                        disabled={!todayPlan()?.bigThing.text.trim() || todayPlan()?.bigThing.completed || isReadOnly()}
                                                     />
                                                     <div class="swap-on w-16 h-16 bg-primary rounded-full flex items-center justify-center shadow-[0_0_30px_theme(colors.primary.DEFAULT)] text-white">
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
@@ -123,102 +175,124 @@ const DailyDashboard: Component = () => {
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.6, delay: 0.1 }}
-                            class={`card bg-[#1a1d24]/40 backdrop-blur-md border p-6 rounded-[2rem] hover:bg-[#1a1d24]/60 transition-colors group h-[320px] flex flex-col ${(todayPlan()?.mediumThings?.length || 0) > 0 && todayPlan()?.mediumThings?.every(t => t.completed)
+                            class="h-[320px] flex flex-col"
+                        >
+                            <div class={`card bg-[#1a1d24]/40 backdrop-blur-md border p-6 rounded-[2rem] hover:bg-[#1a1d24]/60 transition-colors group flex-1 flex flex-col min-h-0 h-full ${(todayPlan()?.mediumThings?.length || 0) > 0 && todayPlan()?.mediumThings?.every(t => t.completed)
                                 ? 'border-secondary/50 shadow-[0_0_30px_-5px_theme(colors.secondary.DEFAULT)] bg-[#1a1d24]/60'
                                 : 'border-white/5'
                                 }`}
-                        >
-                            <div class="flex items-center justify-between mb-8 flex-none">
-                                <div class="flex items-center gap-4">
-                                    <div class="w-12 h-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center font-black text-2xl border border-secondary/20">3</div>
-                                    <div>
-                                        <h3 class="font-bold text-white text-lg">Crucial Results</h3>
-                                        <p class="text-xs text-secondary/60 font-semibold uppercase tracking-wider">High Impact</p>
+                            >
+                                <div class="flex items-center justify-between mb-8 flex-none">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-12 h-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center font-black text-2xl border border-secondary/20">3</div>
+                                        <div>
+                                            <h3 class="font-bold text-white text-lg">Crucial Results</h3>
+                                            <p class="text-xs text-secondary/60 font-semibold uppercase tracking-wider">High Impact</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div class="space-y-1 flex-1 overflow-y-auto min-h-0 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                <Index each={todayPlan()?.mediumThings || []}>
-                                    {(task, i) => (
-                                        <div class="group/item relative transition-all duration-300">
-                                            <div class={`absolute inset-0 bg-gradient-to-r from-secondary/20 to-transparent rounded-xl opacity-0 group-hover/item:opacity-100 transition-opacity ${task().completed ? 'opacity-0' : ''}`}></div>
-                                            <div class="relative flex items-center gap-3 p-2 rounded-xl border border-transparent hover:border-white/5">
-                                                <input
-                                                    type="checkbox"
-                                                    class="checkbox checkbox-secondary checkbox-md rounded-lg border-2 border-white/20"
-                                                    checked={task().completed}
-                                                    disabled={task().completed}
-                                                    onChange={(e) => {
-                                                        const newTasks = [...todayPlan()!.mediumThings];
-                                                        newTasks[i] = { ...task(), completed: e.currentTarget.checked };
-                                                        updateDailyPlan(todayPlan()!.id, { mediumThings: newTasks });
-                                                    }}
-                                                />
+                                <Show when={todayPlan()} fallback={<div class="flex-1 flex items-center justify-center"><span class="loading loading-spinner text-secondary"></span></div>}>
+                                    <div class="space-y-1 flex-1 overflow-y-auto min-h-0 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                                        <Index each={todayPlan()?.mediumThings || []}>
+                                            {(task, i) => (
+                                                <div class="group/item relative transition-all duration-300">
+                                                    <div class={`absolute inset-0 bg-gradient-to-r from-secondary/20 to-transparent rounded-xl opacity-0 group-hover/item:opacity-100 transition-opacity ${task().completed ? 'opacity-0' : ''}`}></div>
+                                                    <div class="relative flex items-center gap-3 p-2 rounded-xl border border-transparent hover:border-white/5">
+                                                        <input
+                                                            type="checkbox"
+                                                            class="checkbox checkbox-secondary checkbox-md rounded-lg border-2 border-white/20"
+                                                            checked={task().completed}
+                                                            disabled={task().completed || isReadOnly()}
+                                                            onChange={(e) => {
+                                                                if (isReadOnly()) return;
+                                                                const plan = todayPlan();
+                                                                if (plan) {
+                                                                    const newTasks = [...plan.mediumThings];
+                                                                    newTasks[i] = { ...task(), completed: e.currentTarget.checked };
+                                                                    updateDailyPlan(plan.id, { mediumThings: newTasks });
+                                                                }
+                                                            }}
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            class={`input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white/80 font-medium transition-all ${task().completed ? 'line-through opacity-40' : ''}`}
+                                                            value={task().text}
+                                                            placeholder={isReadOnly() ? "" : "Add a crucial result..."}
+                                                            disabled={task().completed || isReadOnly()}
+                                                            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                            onBlur={(e) => {
+                                                                if (isReadOnly()) return;
+                                                                const plan = todayPlan();
+                                                                if (plan) {
+                                                                    const val = e.currentTarget.value.trim();
+                                                                    if (!val) {
+                                                                        const newTasks = [...plan.mediumThings];
+                                                                        newTasks.splice(i, 1);
+                                                                        updateDailyPlan(plan.id, { mediumThings: newTasks });
+                                                                    } else if (val !== task().text) {
+                                                                        const newTasks = [...plan.mediumThings];
+                                                                        newTasks[i] = { ...task(), text: val };
+                                                                        updateDailyPlan(plan.id, { mediumThings: newTasks });
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                        <Show when={!task().completed && !isReadOnly()}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const plan = todayPlan();
+                                                                    if (plan) {
+                                                                        const newTasks = [...plan.mediumThings];
+                                                                        newTasks.splice(i, 1);
+                                                                        updateDailyPlan(plan.id, { mediumThings: newTasks });
+                                                                    }
+                                                                }}
+                                                                class="btn btn-circle btn-ghost btn-sm opacity-0 group-hover/item:opacity-100 transition-opacity text-error/50 hover:text-error hover:bg-error/10 shrink-0"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </Show>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </Index>
+                                        <Show when={(todayPlan()?.mediumThings?.length || 0) < 3 && !isReadOnly()}>
+                                            <div class="relative flex items-center gap-3 p-2 rounded-xl border border-white/5 bg-white/5 transition-colors hover:bg-white/10 group/new">
+                                                <div class="w-5 h-5 rounded-lg border-2 border-white/10 flex items-center justify-center text-white/20 group-hover/new:text-white/50 group-hover/new:border-white/30 transition-colors">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                                                </div>
                                                 <input
                                                     type="text"
-                                                    class={`input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white/80 font-medium transition-all ${task().completed ? 'line-through opacity-40' : ''}`}
-                                                    value={task().text}
-                                                    placeholder="Add a crucial result..."
-                                                    disabled={task().completed}
-                                                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                    class="input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white font-medium p-0 h-auto"
+                                                    placeholder="Type to add result..."
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            const plan = todayPlan();
+                                                            if (plan) {
+                                                                const val = (e.currentTarget as HTMLInputElement).value.trim();
+                                                                if (val) {
+                                                                    const newTasks = [...plan.mediumThings, { id: Date.now().toString(), text: val, completed: false }];
+                                                                    updateDailyPlan(plan.id, { mediumThings: newTasks });
+                                                                    (e.currentTarget as HTMLInputElement).value = "";
+                                                                }
+                                                            }
+                                                        }
+                                                    }}
                                                     onBlur={(e) => {
-                                                        const val = e.currentTarget.value.trim();
-                                                        if (!val) {
-                                                            const newTasks = [...todayPlan()!.mediumThings];
-                                                            newTasks.splice(i, 1);
-                                                            updateDailyPlan(todayPlan()!.id, { mediumThings: newTasks });
-                                                        } else if (val !== task().text) {
-                                                            const newTasks = [...todayPlan()!.mediumThings];
-                                                            newTasks[i] = { ...task(), text: val };
-                                                            updateDailyPlan(todayPlan()!.id, { mediumThings: newTasks });
+                                                        const plan = todayPlan();
+                                                        if (plan) {
+                                                            const val = e.currentTarget.value.trim();
+                                                            if (val) {
+                                                                const newTasks = [...plan.mediumThings, { id: Date.now().toString(), text: val, completed: false }];
+                                                                updateDailyPlan(plan.id, { mediumThings: newTasks });
+                                                                e.currentTarget.value = "";
+                                                            }
                                                         }
                                                     }}
                                                 />
-                                                <Show when={!task().completed}>
-                                                    <button
-                                                        onClick={() => {
-                                                            const newTasks = [...todayPlan()!.mediumThings];
-                                                            newTasks.splice(i, 1);
-                                                            updateDailyPlan(todayPlan()!.id, { mediumThings: newTasks });
-                                                        }}
-                                                        class="btn btn-circle btn-ghost btn-sm opacity-0 group-hover/item:opacity-100 transition-opacity text-error/50 hover:text-error hover:bg-error/10 shrink-0"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                                                    </button>
-                                                </Show>
                                             </div>
-                                        </div>
-                                    )}
-                                </Index>
-                                <Show when={(todayPlan()?.mediumThings?.length || 0) < 3}>
-                                    <div class="relative flex items-center gap-3 p-2 rounded-xl border border-white/5 bg-white/5 transition-colors hover:bg-white/10 group/new">
-                                        <div class="w-5 h-5 rounded-lg border-2 border-white/10 flex items-center justify-center text-white/20 group-hover/new:text-white/50 group-hover/new:border-white/30 transition-colors">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-                                        </div>
-                                        <input
-                                            type="text"
-                                            class="input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white font-medium p-0 h-auto"
-                                            placeholder="Type to add result..."
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    const val = (e.currentTarget as HTMLInputElement).value.trim();
-                                                    if (val) {
-                                                        const newTasks = [...todayPlan()!.mediumThings, { id: Date.now().toString(), text: val, completed: false }];
-                                                        updateDailyPlan(todayPlan()!.id, { mediumThings: newTasks });
-                                                        (e.currentTarget as HTMLInputElement).value = "";
-                                                    }
-                                                }
-                                            }}
-                                            onBlur={(e) => {
-                                                const val = e.currentTarget.value.trim();
-                                                if (val) {
-                                                    const newTasks = [...todayPlan()!.mediumThings, { id: Date.now().toString(), text: val, completed: false }];
-                                                    updateDailyPlan(todayPlan()!.id, { mediumThings: newTasks });
-                                                    e.currentTarget.value = "";
-                                                }
-                                            }}
-                                        />
+                                        </Show>
                                     </div>
                                 </Show>
                             </div>
@@ -228,102 +302,124 @@ const DailyDashboard: Component = () => {
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.6, delay: 0.15 }}
-                            class={`card bg-[#1a1d24]/40 backdrop-blur-md border p-6 rounded-[2rem] hover:bg-[#1a1d24]/60 transition-colors h-[320px] flex flex-col ${(todayPlan()?.smallThings?.length || 0) > 0 && todayPlan()?.smallThings?.every(t => t.completed)
+                            class="h-[320px] flex flex-col"
+                        >
+                            <div class={`card bg-[#1a1d24]/40 backdrop-blur-md border p-6 rounded-[2rem] hover:bg-[#1a1d24]/60 transition-colors flex-1 flex flex-col min-h-0 h-full ${(todayPlan()?.smallThings?.length || 0) > 0 && todayPlan()?.smallThings?.every(t => t.completed)
                                 ? 'border-accent/50 shadow-[0_0_30px_-5px_theme(colors.accent.DEFAULT)] bg-[#1a1d24]/60'
                                 : 'border-white/5'
                                 }`}
-                        >
-                            <div class="flex items-center justify-between mb-8 flex-none">
-                                <div class="flex items-center gap-4">
-                                    <div class="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center font-black text-2xl border border-accent/20">5</div>
-                                    <div>
-                                        <h3 class="font-bold text-white text-lg">Quick Wins</h3>
-                                        <p class="text-xs text-accent/60 font-semibold uppercase tracking-wider">Momentum Builders</p>
+                            >
+                                <div class="flex items-center justify-between mb-8 flex-none">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center font-black text-2xl border border-accent/20">5</div>
+                                        <div>
+                                            <h3 class="font-bold text-white text-lg">Quick Wins</h3>
+                                            <p class="text-xs text-accent/60 font-semibold uppercase tracking-wider">Momentum Builders</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div class="space-y-1 flex-1 overflow-y-auto min-h-0 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                <Index each={todayPlan()?.smallThings || []}>
-                                    {(task, i) => (
-                                        <div class="group/item relative transition-all duration-300">
-                                            <div class={`absolute inset-0 bg-gradient-to-r from-accent/20 to-transparent rounded-xl opacity-0 group-hover/item:opacity-100 transition-opacity ${task().completed ? 'opacity-0' : ''}`}></div>
-                                            <div class="relative flex items-center gap-3 p-2 rounded-xl border border-transparent hover:border-white/5">
-                                                <input
-                                                    type="checkbox"
-                                                    class="checkbox checkbox-accent checkbox-md rounded-lg border-2 border-white/20"
-                                                    checked={task().completed}
-                                                    disabled={task().completed}
-                                                    onChange={(e) => {
-                                                        const newTasks = [...todayPlan()!.smallThings];
-                                                        newTasks[i] = { ...task(), completed: e.currentTarget.checked };
-                                                        updateDailyPlan(todayPlan()!.id, { smallThings: newTasks });
-                                                    }}
-                                                />
+                                <Show when={todayPlan()} fallback={<div class="flex-1 flex items-center justify-center"><span class="loading loading-spinner text-accent"></span></div>}>
+                                    <div class="space-y-1 flex-1 overflow-y-auto min-h-0 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                                        <Index each={todayPlan()?.smallThings || []}>
+                                            {(task, i) => (
+                                                <div class="group/item relative transition-all duration-300">
+                                                    <div class={`absolute inset-0 bg-gradient-to-r from-accent/20 to-transparent rounded-xl opacity-0 group-hover/item:opacity-100 transition-opacity ${task().completed ? 'opacity-0' : ''}`}></div>
+                                                    <div class="relative flex items-center gap-3 p-2 rounded-xl border border-transparent hover:border-white/5">
+                                                        <input
+                                                            type="checkbox"
+                                                            class="checkbox checkbox-accent checkbox-md rounded-lg border-2 border-white/20"
+                                                            checked={task().completed}
+                                                            disabled={task().completed || isReadOnly()}
+                                                            onChange={(e) => {
+                                                                if (isReadOnly()) return;
+                                                                const plan = todayPlan();
+                                                                if (plan) {
+                                                                    const newTasks = [...plan.smallThings];
+                                                                    newTasks[i] = { ...task(), completed: e.currentTarget.checked };
+                                                                    updateDailyPlan(plan.id, { smallThings: newTasks });
+                                                                }
+                                                            }}
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            class={`input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white/80 font-medium transition-all ${task().completed ? 'line-through opacity-40' : ''}`}
+                                                            value={task().text}
+                                                            placeholder={isReadOnly() ? "" : "Add a quick win..."}
+                                                            disabled={task().completed || isReadOnly()}
+                                                            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                            onBlur={(e) => {
+                                                                if (isReadOnly()) return;
+                                                                const plan = todayPlan();
+                                                                if (plan) {
+                                                                    const val = e.currentTarget.value.trim();
+                                                                    if (!val) {
+                                                                        const newTasks = [...plan.smallThings];
+                                                                        newTasks.splice(i, 1);
+                                                                        updateDailyPlan(plan.id, { smallThings: newTasks });
+                                                                    } else if (val !== task().text) {
+                                                                        const newTasks = [...plan.smallThings];
+                                                                        newTasks[i] = { ...task(), text: val };
+                                                                        updateDailyPlan(plan.id, { smallThings: newTasks });
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                        <Show when={!task().completed && !isReadOnly()}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const plan = todayPlan();
+                                                                    if (plan) {
+                                                                        const newTasks = [...plan.smallThings];
+                                                                        newTasks.splice(i, 1);
+                                                                        updateDailyPlan(plan.id, { smallThings: newTasks });
+                                                                    }
+                                                                }}
+                                                                class="btn btn-circle btn-ghost btn-sm opacity-0 group-hover/item:opacity-100 transition-opacity text-error/50 hover:text-error hover:bg-error/10 shrink-0"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </Show>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </Index>
+                                        <Show when={(todayPlan()?.smallThings?.length || 0) < 5 && !isReadOnly()}>
+                                            <div class="relative flex items-center gap-3 p-2 rounded-xl border border-white/5 bg-white/5 transition-colors hover:bg-white/10 group/new">
+                                                <div class="w-5 h-5 rounded-lg border-2 border-white/10 flex items-center justify-center text-white/20 group-hover/new:text-white/50 group-hover/new:border-white/30 transition-colors">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                                                </div>
                                                 <input
                                                     type="text"
-                                                    class={`input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white/80 font-medium transition-all ${task().completed ? 'line-through opacity-40' : ''}`}
-                                                    value={task().text}
-                                                    placeholder="Add a quick win..."
-                                                    disabled={task().completed}
-                                                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                    class="input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white font-medium p-0 h-auto"
+                                                    placeholder="Type to add win..."
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            const plan = todayPlan();
+                                                            if (plan) {
+                                                                const val = (e.currentTarget as HTMLInputElement).value.trim();
+                                                                if (val) {
+                                                                    const newTasks = [...plan.smallThings, { id: Date.now().toString(), text: val, completed: false }];
+                                                                    updateDailyPlan(plan.id, { smallThings: newTasks });
+                                                                    (e.currentTarget as HTMLInputElement).value = "";
+                                                                }
+                                                            }
+                                                        }
+                                                    }}
                                                     onBlur={(e) => {
-                                                        const val = e.currentTarget.value.trim();
-                                                        if (!val) {
-                                                            const newTasks = [...todayPlan()!.smallThings];
-                                                            newTasks.splice(i, 1);
-                                                            updateDailyPlan(todayPlan()!.id, { smallThings: newTasks });
-                                                        } else if (val !== task().text) {
-                                                            const newTasks = [...todayPlan()!.smallThings];
-                                                            newTasks[i] = { ...task(), text: val };
-                                                            updateDailyPlan(todayPlan()!.id, { smallThings: newTasks });
+                                                        const plan = todayPlan();
+                                                        if (plan) {
+                                                            const val = e.currentTarget.value.trim();
+                                                            if (val) {
+                                                                const newTasks = [...plan.smallThings, { id: Date.now().toString(), text: val, completed: false }];
+                                                                updateDailyPlan(plan.id, { smallThings: newTasks });
+                                                                e.currentTarget.value = "";
+                                                            }
                                                         }
                                                     }}
                                                 />
-                                                <Show when={!task().completed}>
-                                                    <button
-                                                        onClick={() => {
-                                                            const newTasks = [...todayPlan()!.smallThings];
-                                                            newTasks.splice(i, 1);
-                                                            updateDailyPlan(todayPlan()!.id, { smallThings: newTasks });
-                                                        }}
-                                                        class="btn btn-circle btn-ghost btn-sm opacity-0 group-hover/item:opacity-100 transition-opacity text-error/50 hover:text-error hover:bg-error/10 shrink-0"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                                                    </button>
-                                                </Show>
                                             </div>
-                                        </div>
-                                    )}
-                                </Index>
-                                <Show when={(todayPlan()?.smallThings?.length || 0) < 5}>
-                                    <div class="relative flex items-center gap-3 p-2 rounded-xl border border-white/5 bg-white/5 transition-colors hover:bg-white/10 group/new">
-                                        <div class="w-5 h-5 rounded-lg border-2 border-white/10 flex items-center justify-center text-white/20 group-hover/new:text-white/50 group-hover/new:border-white/30 transition-colors">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-                                        </div>
-                                        <input
-                                            type="text"
-                                            class="input input-ghost w-full focus:outline-none focus:bg-transparent placeholder:text-white/20 text-white font-medium p-0 h-auto"
-                                            placeholder="Type to add win..."
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    const val = (e.currentTarget as HTMLInputElement).value.trim();
-                                                    if (val) {
-                                                        const newTasks = [...todayPlan()!.smallThings, { id: Date.now().toString(), text: val, completed: false }];
-                                                        updateDailyPlan(todayPlan()!.id, { smallThings: newTasks });
-                                                        (e.currentTarget as HTMLInputElement).value = "";
-                                                    }
-                                                }
-                                            }}
-                                            onBlur={(e) => {
-                                                const val = e.currentTarget.value.trim();
-                                                if (val) {
-                                                    const newTasks = [...todayPlan()!.smallThings, { id: Date.now().toString(), text: val, completed: false }];
-                                                    updateDailyPlan(todayPlan()!.id, { smallThings: newTasks });
-                                                    e.currentTarget.value = "";
-                                                }
-                                            }}
-                                        />
+                                        </Show>
                                     </div>
                                 </Show>
                             </div>
@@ -353,7 +449,20 @@ const DailyDashboard: Component = () => {
                             </div>
                         </div>
 
-                        <Show when={todayPlan()} fallback={<div class="flex justify-center p-12"><span class="loading loading-spinner text-primary loading-lg"></span></div>}>
+                        <Show when={todayPlan()}
+                            fallback={
+                                isReadOnly() ? (
+                                    <div class="flex-1 flex flex-col items-center justify-center h-48 opacity-50">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-2 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <p class="text-white/40 font-medium">No records for this day</p>
+                                    </div>
+                                ) : (
+                                    <div class="flex justify-center p-12"><span class="loading loading-spinner text-primary loading-lg"></span></div>
+                                )
+                            }
+                        >
                             <div class="w-full">
                                 <Show when={habits()?.filter(h => todayPlan()?.habitLogs[h.id]).length} fallback={
                                     <div class="flex flex-col items-center justify-center py-16 px-6 text-center border-2 border-dashed border-white rounded-3xl bg-white/5 group hover:border-primary/30 transition-colors">
@@ -376,7 +485,9 @@ const DailyDashboard: Component = () => {
                                                         habit={def}
                                                         completed={todayPlan()!.habitLogs[def.id]?.completed || false}
                                                         value={todayPlan()!.habitLogs[def.id]?.value || 0}
+                                                        readOnly={isReadOnly()}
                                                         onLog={(amount) => {
+                                                            if (isReadOnly()) return;
                                                             const currentLog = todayPlan()!.habitLogs[def.id];
                                                             toggleHabit(todayPlan()!.id, def.id, currentLog, def.mode, def.dailyTarget || 0, amount);
                                                         }}

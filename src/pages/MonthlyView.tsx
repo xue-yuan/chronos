@@ -1,22 +1,43 @@
-import { type Component, createEffect, Show, Index } from 'solid-js';
+import { type Component, createEffect, Show, Index, onMount, createSignal, For } from 'solid-js';
 import { plansStore } from '../store/plans';
-import { Motion } from 'solid-motionone';
+import { Motion, Presence } from 'solid-motionone';
 
 const MonthlyView: Component = () => {
     const {
         monthlyPlan, ensureMonthlyPlan, updateMonthlyPlan,
-        viewYear, viewMonth, prevMonth, nextMonth
+        monthlyViewYear, monthlyViewMonth, prevMonth, nextMonth, resetMonthlyView,
+        setMonthlyViewYear, setMonthlyViewMonth
     } = plansStore;
+
+    onMount(() => {
+        resetMonthlyView();
+    });
 
     createEffect(() => {
         ensureMonthlyPlan();
     });
 
+    const [isPickerOpen, setIsPickerOpen] = createSignal(false);
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    const togglePicker = () => setIsPickerOpen(!isPickerOpen());
+
+    const selectMonth = (mIndex: number) => {
+        setMonthlyViewMonth(mIndex);
+        setIsPickerOpen(false);
+    };
+
+    const selectYear = (year: number) => {
+        setMonthlyViewYear(year);
+    };
+
+    const currentMonthName = () => months[monthlyViewMonth()];
+
     const isPastMonth = () => {
         const currentYear = new Date().getFullYear();
         const currentMonth = new Date().getMonth();
-        const vYear = viewYear();
-        const vMonth = viewMonth();
+        const vYear = monthlyViewYear();
+        const vMonth = monthlyViewMonth();
         return vYear < currentYear || (vYear === currentYear && vMonth < currentMonth);
     };
 
@@ -96,8 +117,7 @@ const MonthlyView: Component = () => {
         }
     }
 
-    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const currentMonthName = () => months[viewMonth()];
+
 
     return (
         <div class="animate-fade-in w-full max-w-4xl mx-auto pb-20">
@@ -111,16 +131,55 @@ const MonthlyView: Component = () => {
                     </p>
                 </div>
 
-                <div class="flex items-center gap-4 bg-[#1a1d24]/60 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-xl">
+                <div class="relative z-50 flex items-center gap-4 bg-[#1a1d24]/60 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-xl">
                     <button onClick={prevMonth} class="btn btn-circle btn-ghost btn-sm text-white/50 hover:text-white hover:bg-white/10">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <span class="text-2xl font-bold text-white px-4 min-w-[200px] text-center tracking-tight">
-                        {currentMonthName()} <span class="text-white/40 font-light">{viewYear()}</span>
-                    </span>
+
+                    <button onClick={togglePicker} class="text-2xl font-bold text-white px-4 min-w-[200px] text-center tracking-tight hover:text-accent transition-colors">
+                        {currentMonthName()} <span class="text-white/40 font-light">{monthlyViewYear()}</span>
+                    </button>
+
                     <button onClick={nextMonth} class="btn btn-circle btn-ghost btn-sm text-white/50 hover:text-white hover:bg-white/10">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                     </button>
+
+                    <Presence>
+                        <Show when={isPickerOpen()}>
+                            <Motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                transition={{ duration: 0.2 }}
+                                class="absolute top-full right-0 mt-4 bg-[#1a1d24]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 w-[320px] z-[60]"
+                            >
+                                <div class="flex items-center justify-between mb-4">
+                                    <button onClick={() => selectYear(monthlyViewYear() - 1)} class="btn btn-circle btn-ghost btn-xs text-white/50 hover:text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                                    </button>
+                                    <span class="text-white font-bold">{monthlyViewYear()}</span>
+                                    <button onClick={() => selectYear(monthlyViewYear() + 1)} class="btn btn-circle btn-ghost btn-xs text-white/50 hover:text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                                    </button>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <For each={months}>
+                                        {(month, index) => (
+                                            <button
+                                                onClick={() => selectMonth(index())}
+                                                class={`px-2 py-3 rounded-lg text-sm font-bold transition-all ${index() === monthlyViewMonth()
+                                                        ? 'bg-accent text-white shadow-[0_0_10px_theme(colors.accent.DEFAULT)]'
+                                                        : 'text-white/60 hover:bg-white/10 hover:text-white'
+                                                    }`}
+                                            >
+                                                {month.slice(0, 3)}
+                                            </button>
+                                        )}
+                                    </For>
+                                </div>
+                            </Motion.div>
+                        </Show>
+                    </Presence>
                 </div>
             </div>
 

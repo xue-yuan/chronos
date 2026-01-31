@@ -19,7 +19,7 @@ const HabitHeatmap: Component<HabitHeatmapProps> = (props) => {
 
     const renderHeatmap = (data: any[], year: number) => {
         const habitIdProp = props.habitId;
-        const cellSize = 14;
+        const cellSize = 20;
         const cellGap = 4;
         const width = 53 * (cellSize + cellGap) + 50;
         const height = 7 * (cellSize + cellGap) + 30;
@@ -156,7 +156,7 @@ const HabitHeatmap: Component<HabitHeatmapProps> = (props) => {
             .text(d => d);
 
         svg.attr("viewBox", `0 0 ${width + 50} ${height + 20}`);
-        svg.attr("width", "100%");
+        svg.attr("width", `${width + 50}px`);
         svg.attr("height", "auto");
     };
 
@@ -257,8 +257,8 @@ const HabitHeatmap: Component<HabitHeatmapProps> = (props) => {
     });
 
     return (
-        <div class="relative w-full overflow-hidden">
-            <svg ref={svgRef} class="w-full text-white/20 select-none"></svg>
+        <div class="relative w-full overflow-x-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pb-2">
+            <svg ref={svgRef} class="text-white/20 select-none block"></svg>
             <Portal mount={document.body}>
                 <div
                     ref={tooltipRef}

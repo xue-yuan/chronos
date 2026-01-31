@@ -1,20 +1,41 @@
-import { type Component, createEffect, Show, Index } from 'solid-js';
+import { type Component, createEffect, Show, Index, onMount, createSignal, For } from 'solid-js';
 import { plansStore } from '../store/plans';
 import HabitHeatmap from '../components/viz/HabitHeatmap';
-import { Motion } from 'solid-motionone';
+import { Motion, Presence } from 'solid-motionone';
 
 const AnnualView: Component = () => {
     const {
         annualPlan, ensureAnnualPlan, updateAnnualPlan,
-        viewYear, prevYear, nextYear
+        annualViewYear, prevYear, nextYear, resetAnnualView, setAnnualViewYear
     } = plansStore;
+
+    onMount(() => {
+        resetAnnualView();
+    });
 
     createEffect(() => {
         ensureAnnualPlan();
     });
 
+    const [isYearPickerOpen, setIsYearPickerOpen] = createSignal(false);
+
+    const generateYears = () => {
+        const current = annualViewYear();
+        const years = [];
+        for (let i = current - 5; i <= current + 6; i++) {
+            years.push(i);
+        }
+        return years;
+    };
+
+    const toggleYearPicker = () => setIsYearPickerOpen(!isYearPickerOpen());
+    const selectYear = (year: number) => {
+        setAnnualViewYear(year);
+        setIsYearPickerOpen(false);
+    };
+
     const isPastYear = () => {
-        return viewYear() < new Date().getFullYear();
+        return annualViewYear() < new Date().getFullYear();
     };
 
     const handleNewGoalKeyDown = (e: KeyboardEvent, text: string) => {
@@ -100,16 +121,44 @@ const AnnualView: Component = () => {
                         Define your North Star for the year.
                     </p>
                 </div>
-                <div class="flex items-center gap-4 bg-[#1a1d24]/60 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-xl">
+                <div class="relative z-50 flex items-center gap-4 bg-[#1a1d24]/60 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-xl">
                     <button onClick={prevYear} class="btn btn-circle btn-ghost btn-sm text-white/50 hover:text-white hover:bg-white/10">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <span class="text-2xl font-bold text-white px-4 min-w-[120px] text-center tracking-tight">
-                        {viewYear()}
-                    </span>
+
+                    <button onClick={toggleYearPicker} class="text-2xl font-bold text-white px-4 min-w-[120px] text-center tracking-tight hover:text-primary transition-colors relative">
+                        {annualViewYear()}
+                    </button>
+
                     <button onClick={nextYear} class="btn btn-circle btn-ghost btn-sm text-white/50 hover:text-white hover:bg-white/10">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                     </button>
+
+                    <Presence>
+                        <Show when={isYearPickerOpen()}>
+                            <Motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                transition={{ duration: 0.2 }}
+                                class="absolute top-full right-0 mt-4 bg-[#1a1d24]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 w-64 grid grid-cols-3 gap-2 z-[60]"
+                            >
+                                <For each={generateYears()}>
+                                    {(year) => (
+                                        <button
+                                            onClick={() => selectYear(year)}
+                                            class={`px-2 py-2 rounded-lg text-sm font-bold transition-all ${year === annualViewYear()
+                                                    ? 'bg-primary text-white shadow-[0_0_10px_theme(colors.primary.DEFAULT)]'
+                                                    : 'text-white/60 hover:bg-white/10 hover:text-white'
+                                                }`}
+                                        >
+                                            {year}
+                                        </button>
+                                    )}
+                                </For>
+                            </Motion.div>
+                        </Show>
+                    </Presence>
                 </div>
             </div>
             <div class="space-y-8">
@@ -197,7 +246,7 @@ const AnnualView: Component = () => {
                             </div>
                         </div>
                         <div class="bg-black/20 rounded-xl p-4 border border-white/5 overflow-x-auto custom-scrollbar">
-                            <HabitHeatmap year={viewYear()} />
+                            <HabitHeatmap year={annualViewYear()} />
                         </div>
                     </div>
                 </Motion.div>

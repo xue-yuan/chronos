@@ -1,28 +1,46 @@
-import { type Component, createEffect, Show, Index } from 'solid-js';
+import { type Component, createEffect, Show, Index, onMount, createSignal, For } from 'solid-js';
 import { plansStore } from '../store/plans';
-import { Motion } from 'solid-motionone';
+import { Motion, Presence } from 'solid-motionone';
 
 const WeeklyView: Component = () => {
     const {
         weeklyPlan, ensureWeeklyPlan, updateWeeklyPlan,
-        viewYear, viewWeek, prevWeek, nextWeek,
+        weeklyViewYear, weeklyViewWeek, prevWeek, nextWeek,
+        resetWeeklyView, setWeeklyViewYear, setWeeklyViewWeek,
         getWeekNumber
     } = plansStore;
+
+    onMount(() => {
+        resetWeeklyView();
+    });
 
     createEffect(() => {
         ensureWeeklyPlan();
     });
 
+    const [isPickerOpen, setIsPickerOpen] = createSignal(false);
+
+    const weeks = Array.from({ length: 52 }, (_, i) => i + 1);
+
+    const togglePicker = () => setIsPickerOpen(!isPickerOpen());
+
+    const selectWeek = (w: number) => {
+        setWeeklyViewWeek(w);
+        setIsPickerOpen(false);
+    };
+
+    const selectYear = (year: number) => {
+        setWeeklyViewYear(year);
+    };
+
     const isPastWeek = () => {
         const currentYear = new Date().getFullYear();
         const currentWeek = getWeekNumber(new Date());
 
-        if (viewYear() < currentYear) return true;
-        if (viewYear() === currentYear && viewWeek() < currentWeek) return true;
+        if (weeklyViewYear() < currentYear) return true;
+        if (weeklyViewYear() === currentYear && weeklyViewWeek() < currentWeek) return true;
         return false;
     };
-
-    // const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     const addGoal = (text: string) => {
         if (isPastWeek() || !text.trim()) return;
@@ -109,17 +127,55 @@ const WeeklyView: Component = () => {
                     </p>
                 </div>
 
-                <div class="flex items-center gap-4 bg-[#1a1d24]/60 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-xl">
+                <div class="relative z-50 flex items-center gap-4 bg-[#1a1d24]/60 backdrop-blur-md p-2 rounded-2xl border border-white/5 shadow-xl">
                     <button onClick={prevWeek} class="btn btn-circle btn-ghost btn-sm text-white/50 hover:text-white hover:bg-white/10">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <span class="text-2xl font-bold text-white px-4 min-w-[200px] text-center tracking-tight">
-                        Week {viewWeek()} <span class="text-white/40 font-light">{viewYear()}</span>
-                    </span>
+
+                    <button onClick={togglePicker} class="text-2xl font-bold text-white px-4 min-w-[200px] text-center tracking-tight hover:text-secondary transition-colors">
+                        Week {weeklyViewWeek()} <span class="text-white/40 font-light">{weeklyViewYear()}</span>
+                    </button>
+
                     <button onClick={nextWeek} class="btn btn-circle btn-ghost btn-sm text-white/50 hover:text-white hover:bg-white/10">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                     </button>
 
+                    <Presence>
+                        <Show when={isPickerOpen()}>
+                            <Motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                transition={{ duration: 0.2 }}
+                                class="absolute top-full right-0 mt-4 bg-[#1a1d24]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 w-[360px] z-[60]"
+                            >
+                                <div class="flex items-center justify-between mb-4">
+                                    <button onClick={() => selectYear(weeklyViewYear() - 1)} class="btn btn-circle btn-ghost btn-xs text-white/50 hover:text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                                    </button>
+                                    <span class="text-white font-bold">{weeklyViewYear()}</span>
+                                    <button onClick={() => selectYear(weeklyViewYear() + 1)} class="btn btn-circle btn-ghost btn-xs text-white/50 hover:text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                                    </button>
+                                </div>
+                                <div class="grid grid-cols-8 gap-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    <For each={weeks}>
+                                        {(week) => (
+                                            <button
+                                                onClick={() => selectWeek(week)}
+                                                class={`h-8 w-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center ${week === weeklyViewWeek()
+                                                    ? 'bg-secondary text-white shadow-[0_0_10px_theme(colors.secondary.DEFAULT)]'
+                                                    : 'text-white/60 hover:bg-white/10 hover:text-white'
+                                                    }`}
+                                            >
+                                                {week}
+                                            </button>
+                                        )}
+                                    </For>
+                                </div>
+                            </Motion.div>
+                        </Show>
+                    </Presence>
                 </div>
             </div>
 
@@ -191,34 +247,6 @@ const WeeklyView: Component = () => {
                             </div>
                         </div>
                     </Motion.div>
-
-                    {/* <Motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, delay: 0.1 }}
-                        class="card bg-[#1a1d24]/60 backdrop-blur-md border border-white/5 shadow-xl"
-                    >
-                        <div class="card-body p-8">
-                            <h3 class="text-xl font-bold text-white mb-6 flex justify-between items-center">
-                                <span>Time Blocks</span>
-                                <span class="text-xs font-normal text-white/40 border border-white/10 px-2 py-1 rounded-lg">High-level Planning</span>
-                            </h3>
-
-                            <div class="grid grid-cols-7 gap-2">
-                                <For each={days}>
-                                    {(day) => (
-                                        <div class="aspect-[3/4] bg-white/5 rounded-xl border border-white/5 p-3 flex flex-col items-center justify-between hover:bg-white/10 transition-colors group cursor-pointer">
-                                            <span class="text-xs font-bold text-white/30 uppercase tracking-wider group-hover:text-white/60">{day}</span>
-                                            <div class="w-full flex-1 flex items-center justify-center">
-                                                <div class="w-1 h-1 rounded-full bg-white/10 group-hover:bg-primary/50 transition-colors"></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </For>
-                            </div>
-                            <p class="text-xs text-center mt-6 opacity-30">Detailed block scheduling coming in v1.1</p>
-                        </div>
-                    </Motion.div> */}
                 </div>
             </Show>
         </div>

@@ -39,11 +39,15 @@ export interface DailyPlan {
 }
 
 function createPlansStore() {
-
     const [viewDate, setViewDate] = createSignal(new Date());
-    const [viewYear, setViewYear] = createSignal(new Date().getFullYear());
-    const [viewMonth, setViewMonth] = createSignal(new Date().getMonth());
-    const [viewWeek, setViewWeek] = createSignal(getWeekNumber(new Date()));
+
+    const [annualViewYear, setAnnualViewYear] = createSignal(new Date().getFullYear());
+
+    const [monthlyViewYear, setMonthlyViewYear] = createSignal(new Date().getFullYear());
+    const [monthlyViewMonth, setMonthlyViewMonth] = createSignal(new Date().getMonth());
+
+    const [weeklyViewYear, setWeeklyViewYear] = createSignal(new Date().getFullYear());
+    const [weeklyViewWeek, setWeeklyViewWeek] = createSignal(getWeekNumber(new Date()));
 
     const getTodayStr = () => {
         const d = viewDate();
@@ -64,39 +68,50 @@ function createPlansStore() {
         return next;
     });
 
-    const prevYear = () => setViewYear(y => y - 1);
-    const nextYear = () => setViewYear(y => y + 1);
+    const prevYear = () => setAnnualViewYear(y => y - 1);
+    const nextYear = () => setAnnualViewYear(y => y + 1);
+    const resetAnnualView = () => setAnnualViewYear(new Date().getFullYear());
 
-    const prevMonth = () => setViewMonth(m => {
+    const prevMonth = () => setMonthlyViewMonth(m => {
         if (m === 0) {
-            setViewYear(y => y - 1);
+            setMonthlyViewYear(y => y - 1);
             return 11;
         }
         return m - 1;
     });
 
-    const nextMonth = () => setViewMonth(m => {
+    const nextMonth = () => setMonthlyViewMonth(m => {
         if (m === 11) {
-            setViewYear(y => y + 1);
+            setMonthlyViewYear(y => y + 1);
             return 0;
         }
         return m + 1;
     });
+    const resetMonthlyView = () => {
+        const d = new Date();
+        setMonthlyViewYear(d.getFullYear());
+        setMonthlyViewMonth(d.getMonth());
+    };
 
-    const prevWeek = () => setViewWeek(w => {
+    const prevWeek = () => setWeeklyViewWeek(w => {
         if (w === 1) {
-            setViewYear(y => y - 1);
+            setWeeklyViewYear(y => y - 1);
             return 52;
         }
         return w - 1;
     });
-    const nextWeek = () => setViewWeek(w => {
+    const nextWeek = () => setWeeklyViewWeek(w => {
         if (w === 52) {
-            setViewYear(y => y + 1);
+            setWeeklyViewYear(y => y + 1);
             return 1;
         }
         return w + 1;
     });
+    const resetWeeklyView = () => {
+        const d = new Date();
+        setWeeklyViewYear(d.getFullYear());
+        setWeeklyViewWeek(getWeekNumber(d));
+    };
 
     const [todayPlan, { mutate: mutateToday }] = createResource(
         () => ({ uid: authStore.user()?.uid, date: getTodayStr() }),
@@ -140,6 +155,13 @@ function createPlansStore() {
         const uid = authStore.user()?.uid;
         if (!uid) return;
         const date = getTodayStr();
+
+        const viewingDate = new Date(date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        viewingDate.setHours(0, 0, 0, 0);
+        const isPast = viewingDate < today;
+
         let allHabits = currentHabits;
         if (!allHabits) {
             const habitsQ = query(collection(db, "habits"), where("uid", "==", uid));
@@ -158,6 +180,10 @@ function createPlansStore() {
                 planToUpdate = { ...snap.docs[0].data(), id: snap.docs[0].id } as DailyPlan;
                 mutateToday(planToUpdate);
             }
+        }
+
+        if (!planToUpdate && isPast) {
+            return;
         }
 
         if (!planToUpdate) {
@@ -222,7 +248,7 @@ function createPlansStore() {
     };
 
     const [annualPlan, { mutate: mutateAnnual }] = createResource(
-        () => ({ uid: authStore.user()?.uid, year: viewYear() }),
+        () => ({ uid: authStore.user()?.uid, year: annualViewYear() }),
         async ({ uid, year }) => {
             if (!uid) return null;
             const q = query(collection(db, "annual_plans"), where("uid", "==", uid), where("year", "==", year));
@@ -239,7 +265,7 @@ function createPlansStore() {
         if (!uid) return;
         if (annualPlan.loading) return;
 
-        const year = viewYear();
+        const year = annualViewYear();
         let plan = annualPlan();
 
         if (!plan) {
@@ -279,7 +305,7 @@ function createPlansStore() {
     }
 
     const [monthlyPlan, { mutate: mutateMonthly }] = createResource(
-        () => ({ uid: authStore.user()?.uid, year: viewYear(), month: viewMonth() }),
+        () => ({ uid: authStore.user()?.uid, year: monthlyViewYear(), month: monthlyViewMonth() }),
         async ({ uid, year, month }) => {
             if (!uid) return null;
             const q = query(collection(db, "monthly_plans"), where("uid", "==", uid), where("year", "==", year), where("month", "==", month));
@@ -296,8 +322,8 @@ function createPlansStore() {
         if (!uid) return;
         if (monthlyPlan.loading) return;
 
-        const year = viewYear();
-        const month = viewMonth();
+        const year = monthlyViewYear();
+        const month = monthlyViewMonth();
 
         const currentYear = new Date().getFullYear();
         const currentMonth = new Date().getMonth();
@@ -348,7 +374,7 @@ function createPlansStore() {
     }
 
     const [weeklyPlan, { mutate: mutateWeekly }] = createResource(
-        () => ({ uid: authStore.user()?.uid, year: viewYear(), week: viewWeek() }),
+        () => ({ uid: authStore.user()?.uid, year: weeklyViewYear(), week: weeklyViewWeek() }),
         async ({ uid, year, week }) => {
             if (!uid) return null;
             const q = query(collection(db, "weekly_plans"), where("uid", "==", uid), where("year", "==", year), where("week", "==", week));
@@ -365,8 +391,8 @@ function createPlansStore() {
         if (!uid) return;
         if (weeklyPlan.loading) return;
 
-        const year = viewYear();
-        const week = viewWeek();
+        const year = weeklyViewYear();
+        const week = weeklyViewWeek();
 
         const currentYear = new Date().getFullYear();
         const currentWeek = getWeekNumber(new Date());
@@ -410,11 +436,71 @@ function createPlansStore() {
         }
     }
 
+    const [currentStreak, setCurrentStreak] = createSignal(0);
+
+    import("solid-js").then(({ createEffect, onCleanup }) => {
+        createEffect(() => {
+            const uid = authStore.user()?.uid;
+            if (!uid) {
+                setCurrentStreak(0);
+                return;
+            }
+
+            const q = query(
+                collection(db, "daily_plans"),
+                where("uid", "==", uid),
+            );
+
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const plans = snapshot.docs.map(d => d.data() as DailyPlan);
+                plans.sort((a, b) => b.date.localeCompare(a.date));
+
+                if (plans.length === 0) {
+                    setCurrentStreak(0);
+                    return;
+                }
+
+                const toDateStr = (d: Date) => {
+                    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                };
+
+                const isFullyCompleted = (plan: DailyPlan) => {
+                    const bigThingDone = plan.bigThing?.completed;
+                    const habitLogs = Object.values(plan.habitLogs || {});
+                    const allHabitsDone = habitLogs.length > 0
+                        ? habitLogs.every(log => log.completed || log.value > 0)
+                        : true;
+
+                    return bigThingDone && allHabitsDone;
+                };
+
+                let streak = 0;
+                let d = new Date();
+                d.setDate(d.getDate() - 1);
+
+                while (true) {
+                    const dStr = toDateStr(d);
+                    const p = plans.find(p => p.date === dStr);
+                    if (p && isFullyCompleted(p)) {
+                        streak++;
+                        d.setDate(d.getDate() - 1);
+                    } else {
+                        break;
+                    }
+                }
+
+                setCurrentStreak(streak);
+            });
+
+            onCleanup(() => unsubscribe());
+        });
+    });
+
     return {
         viewDate, setViewDate,
-        viewYear, setViewYear,
-        viewMonth, setViewMonth,
-        viewWeek, setViewWeek,
+        annualViewYear, setAnnualViewYear, resetAnnualView,
+        monthlyViewYear, setMonthlyViewYear, monthlyViewMonth, setMonthlyViewMonth, resetMonthlyView,
+        weeklyViewYear, setWeeklyViewYear, weeklyViewWeek, setWeeklyViewWeek, resetWeeklyView,
         prevDay, nextDay,
         prevYear, nextYear,
         prevMonth, nextMonth,
@@ -423,7 +509,8 @@ function createPlansStore() {
         annualPlan, ensureAnnualPlan, updateAnnualPlan,
         monthlyPlan, ensureMonthlyPlan, updateMonthlyPlan,
         weeklyPlan, ensureWeeklyPlan, updateWeeklyPlan,
-        getWeekNumber
+        getWeekNumber,
+        currentStreak
     };
 }
 
