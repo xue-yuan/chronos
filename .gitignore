@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+# Firebase CLI
+firebase-debug.log*
+firestore-debug.log*
+.firebase/

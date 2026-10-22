@@ -1,14 +1,14 @@
-import { type Component } from 'solid-js';
-import { Router, Route } from '@solidjs/router';
+import { type Component, lazy } from 'solid-js';
+import { Router, Route, Navigate } from '@solidjs/router';
 import Layout from './components/Layout';
 
-
-import DailyDashboard from './pages/DailyDashboard';
-import AnnualView from './pages/AnnualView';
-import MonthlyView from './pages/MonthlyView';
-import WeeklyView from './pages/WeeklyView';
-import Habits from './pages/Habits';
+import DayView from './pages/DayView';
 import Login from './pages/Login';
+
+const WeekView = lazy(() => import('./pages/WeekView'));
+const MonthView = lazy(() => import('./pages/MonthView'));
+const YearView = lazy(() => import('./pages/YearView'));
+const Habits = lazy(() => import('./pages/Habits'));
 
 const App: Component = () => {
 
@@ -16,11 +16,16 @@ const App: Component = () => {
     <Router>
       <Route path="/login" component={Login} />
       <Route path="/" component={Layout}>
-        <Route path="/" component={DailyDashboard} />
+        <Route path="/" component={DayView} />
+        <Route path="/day/:date" component={DayView} />
+        <Route path="/week/:week?" component={WeekView} />
+        <Route path="/month/:month?" component={MonthView} />
+        <Route path="/year/:year?" component={YearView} />
         <Route path="/habits" component={Habits} />
-        <Route path="/planning/annual" component={AnnualView} />
-        <Route path="/planning/monthly" component={MonthlyView} />
-        <Route path="/planning/weekly" component={WeeklyView} />
+        <Route path="/planning/weekly" component={() => <Navigate href="/week" />} />
+        <Route path="/planning/monthly" component={() => <Navigate href="/month" />} />
+        <Route path="/planning/annual" component={() => <Navigate href="/year" />} />
+        <Route path="*" component={() => <Navigate href="/" />} />
       </Route>
     </Router>
   );

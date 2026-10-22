@@ -1,78 +1,132 @@
 @import "tailwindcss";
-@plugin "daisyui";
 
-html,
-body {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-  font-family: 'Outfit', sans-serif;
+@plugin "daisyui" {
+  themes: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "chronos-light";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f6f6f7;
+  --color-base-300: #e7e7ea;
+  --color-base-content: #18181b;
+  --color-primary: oklch(52% 0.19 268);
+  --color-primary-content: #ffffff;
+  --color-secondary: oklch(55% 0.12 220);
+  --color-secondary-content: #ffffff;
+  --color-accent: oklch(62% 0.17 340);
+  --color-accent-content: #ffffff;
+  --color-neutral: #18181b;
+  --color-neutral-content: #fafafa;
+  --color-info: oklch(60% 0.13 230);
+  --color-info-content: #ffffff;
+  --color-success: oklch(60% 0.15 155);
+  --color-success-content: #ffffff;
+  --color-warning: oklch(72% 0.16 65);
+  --color-warning-content: #2b1700;
+  --color-error: oklch(58% 0.2 25);
+  --color-error-content: #ffffff;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "chronos-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #111113;
+  --color-base-200: #19191c;
+  --color-base-300: #2a2a2e;
+  --color-base-content: #ececef;
+  --color-primary: oklch(72% 0.14 268);
+  --color-primary-content: #0b0b14;
+  --color-secondary: oklch(72% 0.1 220);
+  --color-secondary-content: #071018;
+  --color-accent: oklch(74% 0.14 340);
+  --color-accent-content: #1a0710;
+  --color-neutral: #ececef;
+  --color-neutral-content: #111113;
+  --color-info: oklch(72% 0.11 230);
+  --color-info-content: #061018;
+  --color-success: oklch(72% 0.14 155);
+  --color-success-content: #04140b;
+  --color-warning: oklch(80% 0.14 70);
+  --color-warning-content: #231300;
+  --color-error: oklch(68% 0.18 25);
+  --color-error-content: #1a0505;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  background: var(--color-base-100);
+  color: var(--color-base-content);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-base-content) 15%, transparent) transparent;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.6s ease-out forwards;
+  animation: fadeIn 0.2s ease-out;
 }
 
-@keyframes shine {
-  0% {
-    transform: translateX(-100%) skewX(-15deg);
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-
-  100% {
-    transform: translateX(200%) skewX(-15deg);
-  }
-}
-
-.animate-shine {
-  animation: shine 4s infinite linear;
-}
-
-@keyframes float {
-
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
-
-@keyframes pulse-slow {
-
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-
-  50% {
-    opacity: 0.6;
-  }
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-#root {
-  height: 100%;
 }

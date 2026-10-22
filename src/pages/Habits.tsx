@@ -1,251 +1,311 @@
-import { type Component, createSignal, For, Show, createEffect } from 'solid-js';
-import { habitsStore } from '../store/habits';
-import { plansStore } from '../store/plans';
-import HabitHeatmap from '../components/viz/HabitHeatmap';
-import { Motion } from 'solid-motionone';
+import { type Component, createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
+import { Portal } from 'solid-js/web';
+import { habitsStore, type HabitInput } from '../store/habits';
+import { daysStore } from '../store/days';
+import { today } from '../store/clock';
+import { reportError, toast } from '../store/toast';
+import TopBar from '../components/timeline/TopBar';
+import Page from '../components/timeline/Page';
+import Heatmap from '../components/viz/Heatmap';
+import { ProgressRing } from '../components/habits/HabitRow';
+import { parseDateKey, shiftDateKey, toDateKey, WEEKDAY_SHORT } from '../lib/date';
+import type { Habit, HabitLog, HabitMode } from '../lib/model';
+import { habitIntensity, habitStreak, isDueOn, isLogDone, nextLog, scheduleLabel } from '../lib/progress';
+
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAYS = [1, 2, 3, 4, 5];
+// Monday-first order for the day picker.
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 const Habits: Component = () => {
     const { habits, addHabit, updateHabit, removeHabit } = habitsStore;
-    const { todayPlan, toggleHabit, ensureTodayPlan } = plansStore;
 
     const [isModalOpen, setIsModalOpen] = createSignal(false);
-    const [editMode, setEditMode] = createSignal<string | null>(null);
+    const [editId, setEditId] = createSignal<string | null>(null);
+    const [confirmDelete, setConfirmDelete] = createSignal<string | null>(null);
 
     const [name, setName] = createSignal("");
-    const [mode, setMode] = createSignal<'checkbox' | 'quantifiable'>('checkbox');
+    const [mode, setMode] = createSignal<HabitMode>('checkbox');
     const [unit, setUnit] = createSignal("");
     const [dailyTarget, setDailyTarget] = createSignal<number | null>(null);
-    const [_, setIncrement] = createSignal(1);
+    const [increment, setIncrement] = createSignal(1);
+    const [frequency, setFrequency] = createSignal<number[]>(ALL_DAYS);
 
-    createEffect(() => {
-        ensureTodayPlan(habits());
+    let nameInput: HTMLInputElement | undefined;
+
+    const todayPlan = () => daysStore.get(today());
+    const heatmapFrom = () => shiftDateKey(today(), -7 * 52 - parseDateKey(today()).getDay());
+
+    const stats = createMemo(() => {
+        const plans = daysStore.plans();
+        const from = daysStore.windowStart();
+        return new Map((habits() ?? []).map(h => [h.id, habitStreak(h, plans, today(), from)]));
     });
 
-    const openModal = (id?: string) => {
-        if (id) {
-            const h = habits()?.find(x => x.id === id);
-            if (h) {
-                setEditMode(id);
-                setName(h.name);
-                setMode(h.mode);
-                setUnit(h.unit || "");
-                setDailyTarget(h.dailyTarget ?? null);
-                setIncrement(h.increment || 1);
-            }
-        } else {
-            setEditMode(null);
-            setName("");
-            setMode('checkbox');
-            setUnit("");
-            setDailyTarget(null);
-            setIncrement(1);
-        }
+    const openModal = (habit?: Habit) => {
+        setEditId(habit?.id ?? null);
+        setName(habit?.name ?? "");
+        setMode(habit?.mode ?? 'checkbox');
+        setUnit(habit?.unit ?? "");
+        setDailyTarget(habit?.dailyTarget ?? null);
+        setIncrement(habit?.increment && habit.increment > 0 ? habit.increment : 1);
+        setFrequency(habit?.frequency?.length ? [...habit.frequency] : ALL_DAYS);
         setIsModalOpen(true);
+        setTimeout(() => nameInput?.focus(), 50);
     };
 
     const closeModal = () => setIsModalOpen(false);
 
-    const handleSubmit = async (e: Event) => {
+    const toggleDay = (day: number) => {
+        const next = frequency().includes(day) ? frequency().filter(d => d !== day) : [...frequency(), day];
+        if (next.length) setFrequency(next.sort((a, b) => a - b));
+    };
+
+    const handleSubmit = (e: Event) => {
         e.preventDefault();
-        const habitData = {
-            name: name(),
+        const trimmed = name().trim();
+        if (!trimmed) return;
+        const quantifiable = mode() === 'quantifiable';
+        const habitData: HabitInput = {
+            name: trimmed.slice(0, 100),
             mode: mode(),
-            dailyTarget: dailyTarget() ?? null,
-            ...(mode() === 'quantifiable' ? {
-                unit: unit(),
-            } : {}),
-            increment: 1,
-            color: "primary"
+            dailyTarget: quantifiable && dailyTarget() && dailyTarget()! > 0 ? dailyTarget() : null,
+            unit: quantifiable ? unit().trim().slice(0, 20) : "",
+            increment: quantifiable && increment() > 0 ? increment() : 1,
+            frequency: frequency().length === 7 ? [] : frequency(),
+            color: "primary",
         };
 
-        try {
-            if (editMode()) {
-                await updateHabit(editMode()!, habitData);
-            } else {
-                await addHabit(habitData);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            closeModal();
-            ensureTodayPlan(habits());
-        }
+        const id = editId();
+        (id ? updateHabit(id, habitData) : addHabit(habitData)).catch(reportError(id ? 'Saving habit' : 'Creating habit'));
+        closeModal();
     };
 
-    const handleToggle = async (habitId: string, habitMode: 'checkbox' | 'quantifiable', target: number = 0) => {
-        const plan = todayPlan();
-        if (plan) {
-            const currentLog = plan.habitLogs[habitId];
-            await toggleHabit(plan.id, habitId, currentLog, habitMode, target, 1);
+    const handleDelete = (habit: Habit) => {
+        if (confirmDelete() !== habit.id) {
+            setConfirmDelete(habit.id);
+            setTimeout(() => setConfirmDelete(c => (c === habit.id ? null : c)), 4000);
+            return;
         }
+        setConfirmDelete(null);
+        removeHabit(habit.id)
+            .then(() => toast(`Deleted "${habit.name}"`))
+            .catch(reportError('Deleting habit'));
     };
+
+    const [pending, setPending] = createSignal<Record<string, HabitLog>>({});
+    createEffect(on(todayPlan, () => setPending({}), { defer: true }));
+    const currentLog = (habit: Habit) => pending()[habit.id] ?? todayPlan()?.habitLogs[habit.id];
+
+    const checkIn = (habit: Habit) => {
+        const quantity = habit.mode === 'quantifiable';
+        const step = habit.increment && habit.increment > 0 ? habit.increment : 1;
+        const next = nextLog(habit, currentLog(habit), quantity ? step : 'toggle');
+        navigator.vibrate?.(8);
+        setPending(p => ({ ...p, [habit.id]: next }));
+        daysStore.setHabitLog(today(), habit.id, next, quantity ? step : undefined);
+    };
+
+    const fieldLabel = 'text-xs font-medium text-base-content/60 mb-1.5 block';
 
     return (
-        <div class="animate-fade-in w-full max-w-7xl mx-auto pb-20">
-            <div class="flex justify-between items-end mb-12">
-                <div>
-                    <h2 class="text-6xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-white via-white/90 to-white/50 mb-2 drop-shadow-sm">
-                        My Rituals
-                    </h2>
-                    <p class="text-white/60 text-xl font-light tracking-wide">
-                        Shape your identity, one day at a time.
-                    </p>
-                </div>
-                <button onClick={() => openModal()} class="btn btn-primary text-white shadow-lg shadow-primary/20">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                    New Habit
-                </button>
-            </div>
-
-            <Show when={habits() && habits()!.length > 0} fallback={
-                <div class="flex flex-col items-center justify-center py-24 px-6 text-center border-2 border-dashed border-white/5 rounded-3xl bg-white/5 opacity-60">
-                    <div class="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+        <>
+            <TopBar crumbs={[{ label: 'Habits' }]} current={{ href: '/', label: 'Today', active: false }} />
+            <Page>
+                <div class="flex items-end justify-between gap-4 pt-8 pb-6">
+                    <div>
+                        <h1 class="text-2xl font-semibold tracking-tight">Habits</h1>
+                        <p class="text-sm text-base-content/55 mt-1">Small things, done often. Days a habit isn't scheduled never break its streak.</p>
                     </div>
-                    <h3 class="text-xl font-bold text-white mb-2">No habits defined yet</h3>
-                    <p class="text-white/40 mb-8 max-w-sm">Create your first habit to start tracking your daily rituals.</p>
-                    <button onClick={() => openModal()} class="btn btn-primary text-white shadow-lg shadow-primary/20">Create your first habit</button>
+                    <button onClick={() => openModal()} class="btn btn-neutral btn-sm shrink-0">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" d="M12 5v14m7-7H5" /></svg>
+                        New habit
+                    </button>
                 </div>
-            }>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 auto-rows-fr">
-                    <For each={habits()}>
-                        {(habit, i) => {
-                            const todayLog = () => todayPlan()?.habitLogs[habit.id] || { completed: false, value: 0 };
-                            return (
-                                <Motion.div
-                                    initial={{ opacity: 0, scale: 0.95 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ duration: 0.4, delay: i() * 0.05 }}
-                                    class="card bg-[#1a1d24]/60 backdrop-blur-md border border-white/5 shadow-xl hover:shadow-2xl hover:border-white/10 group"
-                                >
-                                    <div class="card-body p-6 relative overflow-hidden">
-                                        <div class="absolute right-0 top-0 w-32 h-32 bg-gradient-to-bl from-white/5 to-transparent rounded-bl-full -mr-8 -mt-8 pointer-events-none opacity-0 group-hover:opacity-100"></div>
 
-                                        <div class="flex justify-between items-start mb-4 relative z-10">
-                                            <div>
-                                                <h3 class="font-bold text-2xl text-white tracking-tight leading-none mb-1">{habit.name}</h3>
-                                                <div class="text-[10px] text-white/40 font-mono uppercase tracking-wider flex items-center gap-2">
-                                                    <span class={`w-1.5 h-1.5 rounded-full ${todayLog().completed ? 'bg-success shadow-[0_0_10px_rgba(54,211,153,0.5)]' : 'bg-white/20'}`}></span>
-                                                    {habit.mode === 'checkbox' ? 'Daily' : `Target: ${habit.dailyTarget} ${habit.unit || ''}`}
-                                                </div>
-                                            </div>
-                                            <div class="dropdown dropdown-end">
-                                                <div tabindex="0" role="button" class="btn btn-ghost btn-xs btn-circle text-white/20 hover:text-white">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
-                                                </div>
-                                                <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-xl bg-[#1a1d24] border border-white/10 rounded-box w-32 mt-2">
-                                                    <li><button onClick={() => openModal(habit.id)} class="text-white/70 hover:text-white text-xs">Edit</button></li>
-                                                    <li><button onClick={() => removeHabit(habit.id)} class="text-error/70 hover:text-error text-xs">Delete</button></li>
-                                                </ul>
-                                            </div>
-                                        </div>
-
-                                        <div class="flex items-center justify-between gap-6 mb-6">
-                                            <div class="flex-1 min-w-0">
-                                                <HabitHeatmap year={new Date().getFullYear()} habitId={habit.id} mode={habit.mode} dailyTarget={habit.dailyTarget || undefined} />
-                                            </div>
-
-                                            <div class="shrink-0 flex flex-col items-center gap-2 min-w-[80px]">
+                <Show when={habits() !== undefined} fallback={<span class="loading loading-spinner loading-sm text-base-content/30"></span>}>
+                    <Show when={habits()!.length > 0} fallback={
+                        <div class="rounded-xl border border-dashed border-base-300 py-16 px-6 text-center">
+                            <p class="font-medium">No habits yet</p>
+                            <p class="text-sm text-base-content/55 mt-1 mb-5">Start with one you can do in under two minutes, every day.</p>
+                            <button onClick={() => openModal()} class="btn btn-neutral btn-sm">Create your first habit</button>
+                        </div>
+                    }>
+                        <div class="space-y-3">
+                            <For each={habits()}>
+                                {(habit) => {
+                                    const log = () => currentLog(habit);
+                                    const done = () => isLogDone(habit, log());
+                                    const value = () => Number(log()?.value) || 0;
+                                    const streak = () => stats().get(habit.id) ?? { current: 0, best: 0 };
+                                    const created = toDateKey(new Date(habit.createdAt || 0));
+                                    return (
+                                        <div class="rounded-xl border border-base-300 p-4">
+                                            <div class="flex items-center gap-3">
                                                 <button
-                                                    onClick={() => handleToggle(habit.id, habit.mode, habit.dailyTarget || 0)}
-                                                    class={`btn btn-lg transition-all duration-300 border-0 shadow-lg ${todayLog().completed
-                                                        ? 'bg-gradient-to-br from-success to-success/50 text-white shadow-success/20 hover:scale-105'
-                                                        : 'bg-white/5 hover:bg-white/10 text-white/20 hover:text-white'
-                                                        } ${(todayLog().value && todayLog().value!.toString().length > 3) ? 'w-auto px-4 rounded-full min-w-[4rem]' : 'btn-circle'}`}
+                                                    type="button"
+                                                    class="shrink-0 rounded-full transition-transform active:scale-90"
+                                                    onClick={() => checkIn(habit)}
+                                                    aria-label={habit.mode === 'checkbox' ? (done() ? `Undo ${habit.name}` : `Check in ${habit.name}`) : `Add ${habit.increment || 1} to ${habit.name}`}
                                                 >
-                                                    <Show when={habit.mode === 'checkbox'} fallback={
-                                                        <span class={`${(todayLog().value && todayLog().value!.toString().length > 4) ? 'text-sm' : 'text-xl'} font-black`}>{todayLog().value || 0}</span>
-                                                    }>
-                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                                                        </svg>
-                                                    </Show>
+                                                    <ProgressRing
+                                                        done={done()}
+                                                        progress={habit.mode === 'quantifiable' && habit.dailyTarget ? value() / habit.dailyTarget : done() ? 1 : 0}
+                                                    />
                                                 </button>
-                                                <span class="text-[10px] font-bold uppercase tracking-wider text-white/30">
-                                                    {todayLog().completed ? 'Done' : 'Today'}
-                                                </span>
+                                                <div class="min-w-0 flex-1">
+                                                    <div class="font-medium truncate">{habit.name}</div>
+                                                    <div class="text-xs text-base-content/50 mt-0.5 truncate">
+                                                        {scheduleLabel(habit)}
+                                                        <Show when={habit.mode === 'quantifiable'}>
+                                                            {' · '}{habit.dailyTarget ? `${value()} / ${habit.dailyTarget} ${habit.unit || ''} today` : `${value()} ${habit.unit || ''} today`}
+                                                        </Show>
+                                                        <Show when={!isDueOn(habit, today())}>{' · rest day'}</Show>
+                                                    </div>
+                                                </div>
+                                                <div class="hidden sm:flex items-center gap-5 shrink-0 mr-2 tabular-nums">
+                                                    <div class="text-right">
+                                                        <div class="font-semibold text-warning">{streak().current}</div>
+                                                        <div class="text-[11px] text-base-content/45">streak</div>
+                                                    </div>
+                                                    <div class="text-right">
+                                                        <div class="font-semibold">{streak().best}</div>
+                                                        <div class="text-[11px] text-base-content/45">best</div>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center shrink-0">
+                                                    <button onClick={() => openModal(habit)} class="btn btn-ghost btn-xs">Edit</button>
+                                                    <button
+                                                        onClick={() => handleDelete(habit)}
+                                                        class={`btn btn-xs ${confirmDelete() === habit.id ? 'btn-error' : 'btn-ghost text-error/80'}`}
+                                                    >
+                                                        {confirmDelete() === habit.id ? 'Confirm' : 'Delete'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="sm:hidden flex gap-4 text-xs text-base-content/55 mt-3 tabular-nums">
+                                                <span><span class="font-semibold text-warning">{streak().current}</span> streak</span>
+                                                <span><span class="font-semibold text-base-content">{streak().best}</span> best</span>
+                                            </div>
+                                            <div class="mt-4 overflow-x-auto scrollbar-thin">
+                                                <Heatmap
+                                                    from={heatmapFrom()}
+                                                    to={today()}
+                                                    today={today()}
+                                                    scrollTo={today()}
+                                                    cellSize={12}
+                                                    value={(key) => {
+                                                        const v = habitIntensity(habit, daysStore.get(key)?.habitLogs[habit.id]);
+                                                        if (v > 0) return v;
+                                                        return isDueOn(habit, key) && key < today() && key >= created ? 0 : null;
+                                                    }}
+                                                    title={(key) => {
+                                                        const l = daysStore.get(key)?.habitLogs[habit.id];
+                                                        const label = parseDateKey(key).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                                                        if (habit.mode === 'quantifiable') return `${label}: ${Number(l?.value) || 0}${habit.unit ? ' ' + habit.unit : ''}`;
+                                                        return `${label}: ${isLogDone(habit, l) ? 'Done' : 'Not done'}`;
+                                                    }}
+                                                />
                                             </div>
                                         </div>
-                                    </div>
-                                </Motion.div>
-                            );
-                        }}
-                    </For>
-                </div>
-            </Show>
+                                    );
+                                }}
+                            </For>
+                        </div>
+                    </Show>
+                </Show>
+            </Page>
 
-            <div class={`modal ${isModalOpen() ? 'modal-open backdrop-blur-sm' : ''}`} role="dialog">
-                <div class="modal-box bg-[#1a1d24]/95 backdrop-blur-xl border border-white/10 shadow-2xl max-w-2xl p-0 overflow-hidden">
-                    <div class="p-6 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                        <h3 class="font-bold text-xl text-white">{editMode() ? 'Edit Habit' : 'Create New Habit'}</h3>
-                        <button onClick={closeModal} class="btn btn-sm btn-circle btn-ghost text-white/50 hover:text-white">✕</button>
-                    </div>
-
-                    <form onSubmit={handleSubmit} class="p-6 space-y-8">
-                        <div class="form-control w-full">
-                            <label class="label"><span class="label-text text-xs font-bold text-white/50 uppercase tracking-wider">Habit Name</span></label>
-                            <input
-                                type="text"
-                                class="input bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder-white/20 w-full text-lg"
-                                placeholder="What do you want to achieve?"
-                                value={name()}
-                                onInput={(e) => setName(e.currentTarget.value)}
-                                required
-                                autofocus
-                            />
+            <Portal>
+                <div class={`modal ${isModalOpen() ? 'modal-open' : ''}`} role="dialog" aria-modal="true" aria-label={editId() ? 'Edit habit' : 'New habit'} onKeyDown={(e) => e.key === 'Escape' && closeModal()}>
+                    <div class="modal-box bg-base-100 border border-base-300 shadow-xl max-w-lg p-0 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-base-300 flex justify-between items-center">
+                            <h3 class="font-semibold text-lg">{editId() ? 'Edit habit' : 'New habit'}</h3>
+                            <button onClick={closeModal} class="btn btn-sm btn-square btn-ghost text-base-content/50" aria-label="Close">✕</button>
                         </div>
 
-                        <div class="form-control w-full">
-                            <label class="label cursor-pointer justify-start gap-4 p-0">
+                        <form onSubmit={handleSubmit} class="px-6 py-5 space-y-6">
+                            <div>
+                                <label class={fieldLabel} for="habit-name">Name</label>
+                                <input
+                                    id="habit-name"
+                                    ref={nameInput}
+                                    type="text"
+                                    maxLength={100}
+                                    class="input w-full"
+                                    placeholder="e.g. Read, Meditate, Drink water"
+                                    value={name()}
+                                    onInput={(e) => setName(e.currentTarget.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <span class={fieldLabel}>Schedule</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <For each={DAY_ORDER}>
+                                        {(day) => (
+                                            <button
+                                                type="button"
+                                                aria-pressed={frequency().includes(day)}
+                                                onClick={() => toggleDay(day)}
+                                                class={`btn btn-sm w-12 font-medium ${frequency().includes(day) ? 'btn-neutral' : 'btn-ghost border border-base-300 text-base-content/50'}`}
+                                            >
+                                                {WEEKDAY_SHORT[day]}
+                                            </button>
+                                        )}
+                                    </For>
+                                </div>
+                                <div class="flex gap-1 mt-2">
+                                    <button type="button" class="btn btn-xs btn-ghost text-base-content/60" onClick={() => setFrequency(ALL_DAYS)}>Every day</button>
+                                    <button type="button" class="btn btn-xs btn-ghost text-base-content/60" onClick={() => setFrequency(WEEKDAYS)}>Weekdays</button>
+                                </div>
+                            </div>
+
+                            <label class="flex items-start gap-3 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    class="toggle toggle-primary"
+                                    class="toggle toggle-sm toggle-primary mt-0.5"
                                     checked={mode() === 'quantifiable'}
                                     onChange={(e) => setMode(e.currentTarget.checked ? 'quantifiable' : 'checkbox')}
                                 />
-                                <span class="label-text text-white/80 font-medium">Track Amount / Count</span>
+                                <span>
+                                    <span class="text-sm font-medium block">Track an amount</span>
+                                    <span class="text-xs text-base-content/50">Pages read, glasses of water, minutes... instead of just done / not done.</span>
+                                </span>
                             </label>
-                            <p class="text-xs text-white/40 mt-2 pl-14">Enable this if you want to track numbers (e.g., pages read, liters drunk) instead of just completion.</p>
-                        </div>
 
-                        <Show when={mode() === 'quantifiable'}>
-                            <div class="flex gap-4 pl-14 animate-fade-in">
-                                <div class="form-control w-1/2">
-                                    <label class="label"><span class="label-text text-xs font-bold text-white/50 uppercase tracking-wider">Unit (Optional)</span></label>
-                                    <input
-                                        type="text"
-                                        class="input bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder-white/20 w-full"
-                                        placeholder="e.g. Pages"
-                                        value={unit()}
-                                        onInput={(e) => setUnit(e.currentTarget.value)}
-                                    />
+                            <Show when={mode() === 'quantifiable'}>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <label class={fieldLabel} for="habit-target">Daily target</label>
+                                        <input id="habit-target" type="number" inputmode="decimal" class="input w-full" placeholder="10" value={dailyTarget() ?? ''}
+                                            onInput={(e) => setDailyTarget(e.currentTarget.value ? Number(e.currentTarget.value) : null)} required min="0.01" step="any" />
+                                    </div>
+                                    <div>
+                                        <label class={fieldLabel} for="habit-unit">Unit</label>
+                                        <input id="habit-unit" type="text" maxLength={20} class="input w-full" placeholder="pages" value={unit()} onInput={(e) => setUnit(e.currentTarget.value)} />
+                                    </div>
+                                    <div>
+                                        <label class={fieldLabel} for="habit-step">Step</label>
+                                        <input id="habit-step" type="number" inputmode="decimal" class="input w-full" value={increment()}
+                                            onInput={(e) => setIncrement(Number(e.currentTarget.value) || 1)} min="0.01" step="any" />
+                                    </div>
                                 </div>
-                                <div class="form-control w-1/2">
-                                    <label class="label"><span class="label-text text-xs font-bold text-white/50 uppercase tracking-wider">Daily Target</span></label>
-                                    <input
-                                        type="number"
-                                        class="input bg-white/5 border-white/10 focus:border-primary/50 text-white placeholder-white/20 w-full"
-                                        placeholder="e.g. 10"
-                                        value={dailyTarget() || ''}
-                                        onInput={(e) => setDailyTarget(e.currentTarget.value ? Number(e.currentTarget.value) : null)}
-                                        required
-                                        min="1"
-                                    />
-                                </div>
+                            </Show>
+
+                            <div class="flex justify-end gap-2 pt-2">
+                                <button type="button" class="btn btn-ghost btn-sm" onClick={closeModal}>Cancel</button>
+                                <button type="submit" class="btn btn-neutral btn-sm px-5">Save</button>
                             </div>
-                        </Show>
-
-                        <div class="modal-action border-t border-white/5 pt-6 mt-6">
-                            <button type="button" class="btn btn-ghost hover:bg-white/10 text-white/70" onClick={closeModal}>Cancel</button>
-                            <button type="submit" class="btn btn-primary text-white shadow-lg shadow-primary/20 px-8">Save Habit</button>
-                        </div>
-                    </form>
+                        </form>
+                    </div>
+                    <div class="modal-backdrop bg-base-content/20">
+                        <button onClick={closeModal} type="button">close</button>
+                    </div>
                 </div>
-                <div class="modal-backdrop">
-                    <button onClick={closeModal} type="button">close</button>
-                </div>
-            </div>
-        </div>
+            </Portal>
+        </>
     );
 };
 

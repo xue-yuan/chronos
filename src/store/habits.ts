@@ -1,78 +1,43 @@
-import { createResource, createRoot } from "solid-js";
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { createEffect, createRoot, createSignal, onCleanup } from "solid-js";
+import { collection, query, where, addDoc, doc, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { authStore } from "./auth";
+import { reportError } from "./toast";
+import { normalizeHabit, type Habit } from "../lib/model";
 
-export interface Habit {
-    id: string;
-    uid: string;
-    name: string;
-    frequency?: number[];
-    mode: 'checkbox' | 'quantifiable';
-    dailyTarget?: number | null;
-    increment?: number;
-    unit?: string;
-    description?: string;
-    color?: string;
-    timeOfDay?: string;
-    createdAt: number;
-}
+export type { Habit } from "../lib/model";
+
+export type HabitInput = Omit<Habit, "id" | "uid" | "createdAt">;
 
 function createHabitsStore() {
-    const [habits, { mutate }] = createResource(
-        () => authStore.user()?.uid,
-        async (uid) => {
-            if (!uid) return [];
-            const q = query(collection(db, "habits"), where("uid", "==", uid));
-            const snap = await getDocs(q);
-            return snap.docs.map(d => ({ ...d.data(), id: d.id })) as Habit[];
-        }
-    );
+    const [habits, setHabits] = createSignal<Habit[] | undefined>(undefined);
 
-    let unsubscribe: (() => void) | null = null;
+    createEffect(() => {
+        const uid = authStore.user()?.uid;
+        setHabits(undefined);
+        if (!uid) return;
 
-    import("solid-js").then(({ createEffect, onCleanup }) => {
-        createEffect(() => {
-            const uid = authStore.user()?.uid;
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = null;
-            }
-
-            if (uid) {
-                const q = query(collection(db, "habits"), where("uid", "==", uid));
-                unsubscribe = onSnapshot(q, (snapshot) => {
-                    const data = snapshot.docs.map(d => ({ ...d.data(), id: d.id })) as Habit[];
-                    mutate(data);
-                });
-            } else {
-                mutate([]);
-            }
+        const q = query(collection(db, "habits"), where("uid", "==", uid));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            setHabits(snapshot.docs
+                .map(d => normalizeHabit(d.data(), d.id))
+                .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
+        }, (err) => {
+            reportError("Loading habits")(err);
+            setHabits([]);
         });
-
-        onCleanup(() => {
-            if (unsubscribe) unsubscribe();
-        });
+        onCleanup(unsubscribe);
     });
 
-    const addHabit = async (habit: Omit<Habit, "id" | "uid" | "createdAt">) => {
+    const addHabit = (habit: HabitInput) => {
         const uid = authStore.user()?.uid;
-        if (!uid) throw new Error("User not authenticated");
-
-        await addDoc(collection(db, "habits"), {
-            ...habit,
-            uid,
-            createdAt: Date.now()
-        });
+        if (!uid) return Promise.reject(new Error("User not authenticated"));
+        return addDoc(collection(db, "habits"), { ...habit, uid, createdAt: Date.now() });
     };
 
-    const updateHabit = async (id: string, data: Partial<Habit>) => {
-        await updateDoc(doc(db, "habits", id), data);
-    };
+    const updateHabit = (id: string, data: Partial<HabitInput>) => updateDoc(doc(db, "habits", id), data);
 
-    const removeHabit = async (id: string) => {
-        await deleteDoc(doc(db, "habits", id));
-    };
+    const removeHabit = (id: string) => deleteDoc(doc(db, "habits", id));
 
     return { habits, addHabit, updateHabit, removeHabit };
 }

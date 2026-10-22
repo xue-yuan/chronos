@@ -1,0 +1,123 @@
+rules_version = '2';
+
+// Every document carries the owner's `uid`. Users can only read and write
+// their own documents; anything not matched below is denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Reads/deletes of existing docs. List queries must filter on uid == auth.uid.
+    function ownsExisting() {
+      return signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    function ownsIncoming() {
+      return signedIn() && request.resource.data.uid == request.auth.uid;
+    }
+
+    function isUpdateByOwner() {
+      return ownsExisting() && ownsIncoming();
+    }
+
+    // New plan documents use deterministic ids prefixed with the owner's uid
+    // ("<uid>_2026-10-21"), so nobody can pre-create another user's id.
+    function idOwned(id) {
+      return id.matches(request.auth.uid + '_.+');
+    }
+
+    function unchanged(field) {
+      return request.resource.data[field] == resource.data[field];
+    }
+
+    function optStr(d, field, max) {
+      return !(field in d) || (d[field] is string && d[field].size() <= max);
+    }
+
+    function optList(d, field, max) {
+      return !(field in d) || (d[field] is list && d[field].size() <= max);
+    }
+
+    function validYear(d) {
+      return d.year is int && d.year >= 2000 && d.year <= 2200;
+    }
+
+    function validHabit(d) {
+      return d.keys().hasOnly(['uid', 'name', 'mode', 'frequency', 'dailyTarget', 'increment', 'unit', 'description', 'color', 'timeOfDay', 'createdAt'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+        && d.mode in ['checkbox', 'quantifiable']
+        && optList(d, 'frequency', 7)
+        && (!('dailyTarget' in d) || d.dailyTarget == null || d.dailyTarget is number)
+        && (!('increment' in d) || d.increment is number)
+        && optStr(d, 'unit', 40)
+        && optStr(d, 'description', 2000)
+        && optStr(d, 'color', 40)
+        && optStr(d, 'timeOfDay', 40)
+        && d.createdAt is number;
+    }
+
+    function validDaily(d) {
+      return d.keys().hasOnly(['uid', 'date', 'bigThing', 'mediumThings', 'smallThings', 'habitLogs', 'note'])
+        && d.date is string && d.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && (!('bigThing' in d) || (d.bigThing is map && optStr(d.bigThing, 'text', 1000)))
+        && optList(d, 'mediumThings', 20)
+        && optList(d, 'smallThings', 20)
+        && (!('habitLogs' in d) || (d.habitLogs is map && d.habitLogs.size() <= 300))
+        && optStr(d, 'note', 20000);
+    }
+
+    function validWeekly(d) {
+      return d.keys().hasOnly(['uid', 'year', 'week', 'goals', 'focus', 'blocks'])
+        && validYear(d) && d.week is int && d.week >= 1 && d.week <= 53
+        && optList(d, 'goals', 50)
+        && optStr(d, 'focus', 2000)
+        && optList(d, 'blocks', 200);
+    }
+
+    function validMonthly(d) {
+      return d.keys().hasOnly(['uid', 'year', 'month', 'milestones'])
+        && validYear(d) && d.month is int && d.month >= 0 && d.month <= 11
+        && optList(d, 'milestones', 50);
+    }
+
+    function validAnnual(d) {
+      return d.keys().hasOnly(['uid', 'year', 'goals'])
+        && validYear(d)
+        && optList(d, 'goals', 50);
+    }
+
+    match /habits/{habitId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming() && validHabit(request.resource.data);
+      allow update: if isUpdateByOwner() && validHabit(request.resource.data);
+    }
+
+    match /daily_plans/{planId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming()
+        && planId == request.auth.uid + '_' + request.resource.data.date
+        && validDaily(request.resource.data);
+      allow update: if isUpdateByOwner() && unchanged('date') && validDaily(request.resource.data);
+    }
+
+    match /weekly_plans/{planId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming() && idOwned(planId) && validWeekly(request.resource.data);
+      allow update: if isUpdateByOwner() && unchanged('year') && unchanged('week') && validWeekly(request.resource.data);
+    }
+
+    match /monthly_plans/{planId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming() && idOwned(planId) && validMonthly(request.resource.data);
+      allow update: if isUpdateByOwner() && unchanged('year') && unchanged('month') && validMonthly(request.resource.data);
+    }
+
+    match /annual_plans/{planId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming() && idOwned(planId) && validAnnual(request.resource.data);
+      allow update: if isUpdateByOwner() && unchanged('year') && validAnnual(request.resource.data);
+    }
+  }
+}
